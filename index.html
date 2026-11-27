@@ -91,13 +91,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sa
 .search-entry{margin-top:12px;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;}
 .search-entry-ico{width:36px;height:36px;background:linear-gradient(135deg,#1f6feb,#58a6ff);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
 .search-entry span{font-size:14px;color:var(--tx2);}
-#s-search.on{display:flex;flex-direction:column;height:100%;height:100dvh;overflow:hidden;background:var(--bg);isolation:isolate;}
-.search-page-hdr{flex-shrink:0;background:var(--sf);border-bottom:1px solid var(--bd);padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top));display:flex;align-items:center;gap:10px;z-index:3;}
+#s-search.on{display:flex;flex-direction:column;position:fixed;left:0;right:0;top:0;width:100%;max-width:720px;margin:0 auto;height:100%;height:100dvh;overflow:hidden;background:var(--bg);isolation:isolate;z-index:50;}
+.search-page-hdr{flex-shrink:0;background:var(--sf);border-bottom:1px solid var(--bd);padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));display:flex;align-items:center;gap:10px;z-index:3;}
 .search-page-hdr h3{font-size:14px;font-weight:700;flex:1;}
-/* 两层分离：内容层可随意拉，底部输入层自适应不动 */
+/* 两层分离：内容层可随意拉，底部输入层贴键盘/安全区 */
 .search-page-results{flex:1;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;display:flex;flex-direction:column;min-height:0;padding:0;position:relative;z-index:1;transform:translateZ(0);}
 .search-results-inner{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding:10px 12px 12px;min-height:min-content;}
-.search-page-bottom{flex-shrink:0;background:var(--sf);border-top:1.5px solid var(--bd);padding:8px 12px calc(10px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:6px;box-shadow:0 -12px 30px rgba(0,0,0,.4);position:relative;z-index:2;transform:translateZ(0);will-change:transform;}
+.search-page-bottom{flex-shrink:0;background:var(--sf);border-top:1.5px solid var(--bd);padding:8px 12px calc(8px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px;box-shadow:0 -12px 30px rgba(0,0,0,.4);position:relative;z-index:2;transform:translateZ(0);will-change:transform;}
+.search-page-bottom.kb-open{padding-bottom:8px;}
 .bottom-main-row{display:flex;gap:8px;align-items:flex-end;}
 .search-input-wrap{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;}
 .search-input-bar{display:flex;gap:8px;align-items:center;background:var(--bg);border:1.8px solid var(--bd);border-radius:14px;padding:5px 6px 5px 14px;flex-shrink:0;min-height:50px;transition:border-color .15s, box-shadow .15s;}
@@ -384,9 +385,23 @@ function openSearchPage(){
 function fitSearchViewport(){
   var s=document.getElementById('s-search');
   if(!s||!s.classList.contains('on')) return;
-  var vv=window.visualViewport; if(!vv) return;
-  s.style.height=vv.height+'px';
-  s.style.transform='translateY('+vv.offsetTop+'px)';
+  var bottom=document.getElementById('searchBottom');
+  var vv=window.visualViewport;
+  if(vv){
+    // Pin search screen to the visual viewport so the bottom bar hugs the keyboard / chrome
+    s.style.top=vv.offsetTop+'px';
+    s.style.height=Math.max(120,vv.height)+'px';
+    s.style.transform='none';
+    // Space below the visual viewport = keyboard / browser chrome overlay
+    var covered=Math.max(0, window.innerHeight-(vv.offsetTop+vv.height));
+    var keyboardOpen=covered>48 || (window.innerHeight-vv.height)>120;
+    if(bottom){
+      if(keyboardOpen) bottom.classList.add('kb-open');
+      else bottom.classList.remove('kb-open');
+    }
+  }else if(bottom){
+    bottom.classList.remove('kb-open');
+  }
   var o=document.getElementById('search-results-page');
   if(o) o.scrollTop=o.scrollHeight;
 }
@@ -398,18 +413,21 @@ window.addEventListener('orientationchange',function(){setTimeout(fitSearchViewp
 window.addEventListener('resize',function(){setTimeout(fitSearchViewport,50);});
 function closeSearchPage(){
   var s=document.getElementById('s-search');
-  if(s){s.style.height='';s.style.transform='';}
+  var bottom=document.getElementById('searchBottom');
+  if(s){s.style.height='';s.style.top='';s.style.transform='';}
+  if(bottom) bottom.classList.remove('kb-open');
   var ae=document.activeElement; if(ae&&ae.blur) ae.blur();
   clearSearchPage2();
   showScr('home');
 }
 function clearSearchPage2(){
+  clearTimeout(searchTimer);
   var inp=document.getElementById('kw-input-page');if(inp) inp.value='';lastKw='';
   var inner=document.getElementById('search-inner');
   if(inner) inner.innerHTML='<div class="sr-empty">输入关键词搜索题目或答案<br><br>结果从搜索框上沿开始，从下往上长<br>越准越贴输入框<br><br>支持多关键词：关键词 空格 关键词</div>';
   var cb=document.getElementById('clearSearchBtnPage');if(cb) cb.style.display='none';
 }
-function onSearchPageFocus(){}
+function onSearchPageFocus(){setTimeout(fitSearchViewport,50);}
 function fuzzyContains(text, token){
   if(!text || !token) return false;
   if(text.indexOf(token)!==-1) return true;
@@ -538,6 +556,7 @@ function clearSearchPage(){
 function escHtml(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function showDetail(id){
   var q=QMap[id];if(!q)return;
+  var ae=document.activeElement; if(ae&&ae.blur) ae.blur();
   document.getElementById('m-meta').innerHTML='<span style="background:rgba(88,166,255,.15);color:var(--ac);border:1px solid rgba(88,166,255,.3);font-size:11px;padding:3px 10px;border-radius:20px;">'+escHtml(q.type)+'</span><span style="background:var(--sf2);color:var(--tx2);border:1px solid var(--bd);font-size:11px;padding:3px 10px;border-radius:20px;">'+escHtml(q.chapter)+'</span>';
   document.getElementById('m-q').textContent=q.q;
   var opts='';for(var i=0;i<q.opts.length;i++){var isAns=q.ans.indexOf(i)!==-1;opts+='<div style="background:var(--sf2);border:1.5px solid '+(isAns?'var(--gr)':'var(--bd)')+';border-radius:10px;padding:10px 12px;display:flex;gap:8px;font-size:13px;'+(isAns?'background:rgba(63,185,80,.12)':'')+'"><span style="width:20px;height:20px;border-radius:6px;border:1.5px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:11px;background:var(--sf);">'+LBL[i]+'</span><span>'+escHtml(q.opts[i])+'</span></div>';}
@@ -545,8 +564,26 @@ function showDetail(id){
   document.getElementById('m-ans').textContent='正确答案：'+q.ans.map(function(i){return LBL[i];}).join('、');
   document.getElementById('modal').classList.add('on');
 }
-function closeModal(e){if(e.target===document.getElementById('modal'))document.getElementById('modal').classList.remove('on');}
-function closeModalBtn(){document.getElementById('modal').classList.remove('on');}
+function onDetailClosed(){
+  // After closing a search result, clear query + results so the next search starts fresh
+  var s=document.getElementById('s-search');
+  if(!s||!s.classList.contains('on')) return;
+  clearSearchPage2();
+  setTimeout(function(){
+    var inp=document.getElementById('kw-input-page');
+    if(inp) inp.focus();
+    fitSearchViewport();
+  },60);
+}
+function closeModal(e){
+  if(e.target!==document.getElementById('modal')) return;
+  document.getElementById('modal').classList.remove('on');
+  onDetailClosed();
+}
+function closeModalBtn(){
+  document.getElementById('modal').classList.remove('on');
+  onDetailClosed();
+}
 
 function searchCurrentQuestion(){
   if(!quiz || quiz.length===0) return;
